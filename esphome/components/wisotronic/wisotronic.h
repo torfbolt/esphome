@@ -59,6 +59,9 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
  public:
   void set_debug_enabled(bool debug) { debug_enabled_ = debug; }
 
+  // TX: send a raw frame over UART
+  void write_frame(const uint8_t *frame, uint8_t len);
+
  protected:
   void stream_to_packet(uint8_t byte);
   void parse_wisotronic_packet(uint8_t len);
@@ -72,12 +75,14 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
 class WisotronicCover : public cover::Cover, public Component {
  public:
   void set_parent(WisotronicCustomComponent *parent) { parent_ = parent; }
+  void set_cover_tag(uint8_t tag) { this->tag_ = tag; }
 
  protected:
   void control(const cover::CoverCall &call) override;
   cover::CoverTraits get_traits() override;
 
   WisotronicCustomComponent *parent_;
+  uint8_t tag_{0x00};
 };
 
 }  // namespace wisotronic

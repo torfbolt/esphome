@@ -18,6 +18,20 @@ void WisotronicCustomComponent::loop() {
   }
 }
 
+void WisotronicCustomComponent::write_frame(const uint8_t *frame, uint8_t len) {
+  for (uint8_t i = 0; i < len; i++) {
+    write(frame[i]);
+  }
+  if (this->debug_enabled_) {
+    char hex[3 * 128 + 1];
+    size_t pos = 0;
+    for (uint8_t i = 0; i < len; i++) {
+      pos += snprintf(hex + pos, sizeof(hex) - pos, "%02x ", frame[i]);
+    }
+    ESP_LOGD(TAG, "TX class=0x%02x len=%d: %s", frame[1], len, hex);
+  }
+}
+
 void WisotronicCustomComponent::dump_config() {
   LOG_SENSOR("", "Control Unit Temperature", this->control_unit_temperature_sensor_);
   LOG_SENSOR("", "Outdoor Temperature", this->outdoor_temperature_sensor_);
@@ -239,7 +253,89 @@ cover::CoverTraits WisotronicCover::get_traits() {
   return traits;
 }
 
-void WisotronicCover::control(const cover::CoverCall &call) {}
+void WisotronicCover::control(const cover::CoverCall &call) {
+  if (parent_ == nullptr)
+    return;
+
+  // Build a control frame: 23 fd ff 1c 10 01 00 02 <L> <TLV> <checksum>
+  // TLV: [tag][len=6][block_type][sub_type][pos1][tilt1][pos2][tilt2]
+  //   block_type: 0x28=stopped, 0x0a=moving
+  //   sub_type: 0x08=stopped, 0x01=moving-down (close), 0x09=moving-up (open)
+  //   pos: 0=open, 200=closed
+  //   tilt: -80 to 80 (signed 8-bit)
+
+  uint8_t block_type = 0x28;  // stopped by default
+  uint8_t sub_type = 0x08;
+  uint8_t position = 0;  // 0=open, 200=closed
+  int8_t tilt = 0;       // -80 to 80
+
+  // Check for position command first
+  if (call.get_position().has_value()) {
+    float target = call.get_position().value();
+    if (target >= 1.0f) {
+      // Open
+      block_type = 0x0a;
+      sub_type = 0x09;
+      position = 0;
+    } else if (target <= 0.0f) {
+      // Close
+      block_type = 0x0a;
+      sub_type = 0x01;
+      position = 200;
+    }
+  }
+
+  // Check for stop command (overrides position)
+  if (call.get_stop()) {
+    block_type = 0x28;
+    sub_type = 0x08;
+    position = 0;
+  }
+
+  // Check for tilt command
+  if (call.get_tilt().has_value()) {
+    block_type = 0x28;
+    sub_type = 0x08;
+    float target_tilt = call.get_tilt().value();
+    tilt = static_cast<int8_t>(target_tilt * 160.0f - 80.0f);  // 0-100% -> -80 to 80
+  }
+
+  uint8_t tag = this->tag_;
+  uint8_t block_len = 6;
+
+  uint8_t payload[8];
+  payload[0] = tag;
+  payload[1] = block_len;
+  payload[2] = block_type;
+  payload[3] = sub_type;
+  payload[4] = position;
+  payload[5] = static_cast<uint8_t>(tilt);
+  payload[6] = 0;  // pos2
+  payload[7] = 0;  // tilt2
+
+  uint8_t frame[18];
+  frame[0] = 0x23;  // magic
+  frame[1] = 0xfd;  // class (covers)
+  frame[2] = 0xff;  // direction (data)
+  frame[3] = 0x1c;  // frame type (data)
+  frame[4] = 0x10;  // data flag
+  frame[5] = 0x01;  // dataset
+  frame[6] = 0x00;  // dataset selector
+  frame[7] = 0x02;  // dataset id for covers
+  frame[8] = 8;     // L = payload length (8 bytes TLV)
+  for (int i = 0; i < 8; i++) {
+    frame[9 + i] = payload[i];
+  }
+  uint8_t checksum = 0;
+  for (int i = 0; i < 17; i++) {
+    checksum += frame[i];
+  }
+  frame[17] = checksum;
+
+  parent_->write_frame(frame, 18);
+  ESP_LOGD(TAG, "Sent cover control (tag=0x%02x): block_type=0x%02x sub_type=0x%02x pos=%d tilt=%d", tag, block_type,
+           sub_type, position, tilt);
+}
 
 }  // namespace wisotronic
 }  // namespace esphome

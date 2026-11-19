@@ -80,3 +80,38 @@ The pre-existing parser only handled:
 - Parse payloads as TLV chains (tag/length/value) rather than fixed offsets; validate that the
   TLV chain consumes exactly the declared payload length.
 - Route frames by (class, dataset) and map responses back to the requesting poll.
+
+## Cover control frames (TX)
+
+Control frames are sent to command cover movement. The frame format follows the standard
+data frame layout with class `0xfd` (covers), direction `0xff` (data), dataset `0x02`:
+
+```
+[0]     0x23                    magic start byte
+[1]     0xfd                    class (covers)
+[2]     0xff                    direction (data)
+[3]     0x1c                    frame type (data)
+[4]     0x10                    data flag
+[5]     0x01                    dataset
+[6]     0x00                    dataset selector
+[7]     0x02                    dataset id (covers)
+[8]     L                       payload length (8 for single block TLV)
+[9]     tag                     cover tag: 0x00=awning, 0x01=window, 0x02=blinds
+[10]    0x06                    block length (always 6)
+[11]    block_type              0x28=stopped, 0x0a=moving
+[12]    sub_type                0x08=stopped, 0x01=moving-down, 0x09=moving-up
+[13]    position                0=open, 200=closed
+[14]    tilt                    -80 to 80 (signed 8-bit)
+[15]    pos2                    0 (unused)
+[16]    tilt2                   0 (unused)
+[17]    checksum                additive sum of bytes [0..16]
+```
+
+Control command mapping:
+- **OPEN**: block_type=0x0a, sub_type=0x09, position=0, tilt=0
+- **CLOSE**: block_type=0x0a, sub_type=0x01, position=200, tilt=0
+- **STOP**: block_type=0x28, sub_type=0x08, position=0, tilt=0
+- **TILT**: block_type=0x28, sub_type=0x08, position=0, tilt=(-80..80)
+
+The TLV payload for covers is always 8 bytes (tag + len + 6 block bytes), so L is
+always 8 for single-block control frames.

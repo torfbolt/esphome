@@ -374,4 +374,104 @@ TEST(WisotronicTest, PollFrameIsAcceptedWithoutChecksumMismatch) {
   SUCCEED();
 }
 
+// --------------------------------------------------------------------------
+// Cover control tests
+// --------------------------------------------------------------------------
+
+TEST(WisotronicTest, AwningCoverClose) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover awning;
+  awning.set_parent(&probe);
+  probe.set_awning_cover(&awning);
+  probe.setup();
+
+  // Create a cover call to close the awning and execute it.
+  cover::CoverCall call = awning.make_call();
+  call.set_position(0.0f);  // fully closed
+  call.perform();
+
+  SUCCEED();
+}
+
+TEST(WisotronicTest, AwningCoverOpen) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover awning;
+  awning.set_parent(&probe);
+  probe.set_awning_cover(&awning);
+  probe.setup();
+
+  // Create a cover call to open the awning and execute it.
+  cover::CoverCall call = awning.make_call();
+  call.set_position(1.0f);  // fully open
+  call.perform();
+
+  SUCCEED();
+}
+
+TEST(WisotronicTest, WindowCoverClose) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover window;
+  window.set_parent(&probe);
+  probe.set_window_cover(&window);
+  probe.setup();
+
+  // Create a cover call to close the window
+  cover::CoverCall call = window.make_call();
+  call.set_position(0.0f);
+  call.perform();
+
+  SUCCEED();
+}
+
+TEST(WisotronicTest, BlindCoverClose) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover blind;
+  blind.set_parent(&probe);
+  probe.set_blind1_cover(&blind);
+  probe.setup();
+
+  // Create a cover call to close the blind
+  cover::CoverCall call = blind.make_call();
+  call.set_position(0.0f);
+  call.perform();
+
+  SUCCEED();
+}
+
+TEST(WisotronicTest, CoverStop) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover awning;
+  awning.set_parent(&probe);
+  probe.set_awning_cover(&awning);
+  probe.setup();
+
+  // Create a cover call to stop
+  cover::CoverCall call = awning.make_call();
+  call.set_stop(true);
+  call.perform();
+
+  SUCCEED();
+}
+
+TEST(WisotronicTest, CoverTilt) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  WisotronicCover blind;
+  blind.set_parent(&probe);
+  probe.set_blind1_cover(&blind);
+  probe.setup();
+
+  // Create a cover call to tilt (50% tilt up)
+  cover::CoverCall call = blind.make_call();
+  call.set_tilt(0.5f);
+  call.perform();
+
+  SUCCEED();
+}
+
 }  // namespace esphome::wisotronic::testing

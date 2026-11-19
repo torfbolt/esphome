@@ -8,11 +8,11 @@ from .. import CONF_WISOTRONIC_ID, WISOTRONIC_COMPONENT_SCHEMA, wisotronic_ns
 DEPENDENCIES = ["uart"]
 
 # Cover types
-TYPES = {
-    "awning_cover": None,
-    "window_cover": None,
-    "blind1_cover": None,
-    "blind2_cover": None,
+COVER_TAGS = {
+    "awning_cover": 0x00,
+    "window_cover": 0x01,
+    "blind1_cover": 0x02,
+    "blind2_cover": 0x02,
 }
 
 WisotronicCover = wisotronic_ns.class_("WisotronicCover", cover.Cover, cg.Component)
@@ -38,10 +38,11 @@ CONFIG_SCHEMA = WISOTRONIC_COMPONENT_SCHEMA.extend(
 async def to_code(config):
     paren = await cg.get_variable(config[CONF_WISOTRONIC_ID])
 
-    for type in TYPES:
+    for type, tag in COVER_TAGS.items():
         if type in config:
             conf = config[type]
             var = await cover.new_cover(conf)
             await cg.register_component(var, conf)
             cg.add(getattr(paren, f"set_{type}")(var))
             cg.add(var.set_parent(paren))
+            cg.add(var.set_cover_tag(tag))
