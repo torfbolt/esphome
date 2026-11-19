@@ -75,6 +75,14 @@ void WisotronicCustomComponent::stream_to_packet(uint8_t byte) {
   if (sum != checksum) {
     ESP_LOGD(TAG, "Checksum mismatch: %d != %d", sum, checksum);
   } else {
+    if (this->debug_enabled_) {
+      char hex[3 * 128 + 1];
+      size_t pos = 0;
+      for (uint8_t i = 0; i < total_len; i++) {
+        pos += snprintf(hex + pos, sizeof(hex) - pos, "%02x ", buffer_[i]);
+      }
+      ESP_LOGD(TAG, "RX class=0x%02x len=%d: %s", buffer_[1], total_len, hex);
+    }
     parse_wisotronic_packet(total_len);
   }
 

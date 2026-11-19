@@ -56,6 +56,9 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
   WISOTRONIC_COVER(blind1_cover)
   WISOTRONIC_COVER(blind2_cover)
 
+ public:
+  void set_debug_enabled(bool debug) { debug_enabled_ = debug; }
+
  protected:
   void stream_to_packet(uint8_t byte);
   void parse_wisotronic_packet(uint8_t len);
@@ -63,6 +66,7 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
 
   uint8_t buffer_[128];
   uint8_t p_buffer_ = 0;
+  bool debug_enabled_{false};
 };
 
 class WisotronicCover : public cover::Cover, public Component {
