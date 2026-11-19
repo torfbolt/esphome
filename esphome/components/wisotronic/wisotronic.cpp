@@ -57,7 +57,14 @@ void WisotronicCustomComponent::stream_to_packet(uint8_t byte) {
     return;
 
   uint8_t L = buffer_[8];
-  uint8_t total_len = L + 10;
+  uint8_t total_len;
+
+  // Poll frames are 11 bytes fixed length: 23 00 <addr> 10 01 <dataset> 00 00 00 00 CS
+  // Data frames use L + 10 where L is the payload length
+  if (buffer_[3] == 0x10 && buffer_[4] == 0x01 && L == 0)
+    total_len = 11;
+  else
+    total_len = L + 10;
 
   if (total_len > sizeof(buffer_)) {
     p_buffer_ = 0;
@@ -74,17 +81,32 @@ void WisotronicCustomComponent::stream_to_packet(uint8_t byte) {
 
   if (sum != checksum) {
     ESP_LOGD(TAG, "Checksum mismatch: %d != %d", sum, checksum);
-  } else {
-    if (this->debug_enabled_) {
-      char hex[3 * 128 + 1];
-      size_t pos = 0;
-      for (uint8_t i = 0; i < total_len; i++) {
-        pos += snprintf(hex + pos, sizeof(hex) - pos, "%02x ", buffer_[i]);
+    // Resynchronize: search for next 0x23 start byte in remaining buffer
+    int start = -1;
+    for (int i = 1; i < p_buffer_; i++) {
+      if (buffer_[i] == 0x23) {
+        start = i;
+        break;
       }
-      ESP_LOGD(TAG, "RX class=0x%02x len=%d: %s", buffer_[1], total_len, hex);
     }
-    parse_wisotronic_packet(total_len);
+    if (start < 0) {
+      p_buffer_ = 0;
+    } else {
+      std::memmove(buffer_, buffer_ + start, p_buffer_ - start);
+      p_buffer_ -= start;
+    }
+    return;
   }
+
+  if (this->debug_enabled_) {
+    char hex[3 * 128 + 1];
+    size_t pos = 0;
+    for (uint8_t i = 0; i < total_len; i++) {
+      pos += snprintf(hex + pos, sizeof(hex) - pos, "%02x ", buffer_[i]);
+    }
+    ESP_LOGD(TAG, "RX class=0x%02x len=%d: %s", buffer_[1], total_len, hex);
+  }
+  parse_wisotronic_packet(total_len);
 
   int remaining = p_buffer_ - total_len;
   if (remaining > 0)

@@ -347,4 +347,31 @@ TEST(WisotronicTest, EmptyPayloadFrameIsIgnored) {
   SUCCEED();
 }
 
+TEST(WisotronicTest, PollFrameIsAcceptedWithoutChecksumMismatch) {
+  FakeUART uart;
+  WisotronicProbe probe(&uart);
+  probe.setup();
+
+  // Poll frame: 23 00 <addr> 10 01 <dataset> 00 00 00 00 CS (11 bytes total)
+  std::vector<uint8_t> poll_frame;
+  poll_frame.push_back(0x23);
+  poll_frame.push_back(0x00);
+  poll_frame.push_back(0x00);
+  poll_frame.push_back(0x10);
+  poll_frame.push_back(0x01);
+  poll_frame.push_back(0x01);
+  poll_frame.push_back(0x00);
+  poll_frame.push_back(0x00);
+  poll_frame.push_back(0x00);
+  poll_frame.push_back(0x00);
+  uint8_t checksum = 0;
+  for (uint8_t b : poll_frame)
+    checksum += b;
+  poll_frame.push_back(checksum);
+
+  probe.feed(poll_frame);
+
+  SUCCEED();
+}
+
 }  // namespace esphome::wisotronic::testing
