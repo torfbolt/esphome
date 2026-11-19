@@ -3,6 +3,29 @@
 Findings from reverse-engineering the Wisotronic bus (`warema_raw_data` UART dump,
 `esphome/warema.yaml`, ESPHome custom component `my_components/wisotronic`).
 
+## Status
+
+The protocol analysis is based on a single installation (see hardware list below).
+
+It is therefore most probably not complete and may contain errors or assumptions due to lack of
+other systems to compare to. The protocol description below is based on the most commonly
+received data packets, under the assumption that packets with very uncommon start bytes or lengths
+were transmission errors.
+
+## Hardware
+
+List of tested hardware components this library supports (at least partially):
+
+* Wisotronic dialog 3-Kanal Zentrale EWFS-UP (#1002 566)
+* Messwertgeber Wind/Photo/Funkuhr (#623 021)
+* Messwertgeber Niederschlag (#1002 325)
+* Messwertgeber Temperatur aussen (#628 145)
+* Messwertgeber Temperatur/Luftfeuchte (#628 147)
+
+The data was recorded using a standard USB-RS485 adapter. Currently the objective is to only
+monitor data, so a 100 kΩ resistor was added to each data line to rule out influencing the RS485
+bus.
+
 ## Physical layer (as configured in `warema.yaml`)
 
 - RS485 half-duplex, bus powered at 24 V, JY(St) 2x2x0.8 mm², 120 Ω termination.
@@ -80,8 +103,8 @@ No TLV payload. Byte 5 selects dataset to request.
 | Tag | Len | Status | Meaning | Scaling / Formula |
 |---|---|---|---|---|
 | 0x00 | 6 | ✅ KNOWN | Awning cover block | `28 08 <pos> <tilt> <pos2> <tilt2>` |
-| 0x01 | 6 | ✅ KNOWN | Window cover block | `0A 09 <pos> <tilt> <pos2> <tilt2>` |
-| 0x02 | 6 | ⚠️ VAGUE | Blind cover block | `28 08 <pos> <tilt> <pos2> <tilt2>` — differs from 0x12-0x15; **disabled** |
+| 0x01 | 6 | ✅ KNOWN | Window cover block | `0A 09 <pos> <tilt=0> <pos2> <tilt2=0>` — no tilt, linear actuator only |
+| 0x02 | 6 | ❓ UNKNOWN | Unknown block | `28 08 <val> <val> <val> <val>` |
 | 0x03 | 1 | ✅ KNOWN | Wind speed | `m/s = value/5.0` |
 | 0x11 | 7 | ✅ KNOWN | **Full timestamp** | See below |
 
@@ -142,14 +165,12 @@ Notation: `int` = raw integer from device (0–255), `physical` = scaled enginee
 
 ### Cover Position / Tilt
 
-| Tag | Frame | int → physical | Range |
-|---|---|---|---|
-| 0x00 (46 B, byte 2) | 46 B | `physical = 1 - int/200` | 0=open..1=closed |
-| 0x01 (46 B, byte 2) | 46 B | `physical = int/200` | 0=open..1=closed |
-| 0x12, 0x14 (class 0xFD) | 22 B | `physical = 1 - int/200` | 0=open..1=closed |
-| 0x13, 0x15 (class 0xFD) | 22 B | `physical = 0.5 - int8(int)/160` | -80..80 |
-
-*Cover block 0x02 (46 B) uses different tilt scaling (100% vs 50%); disabled in parser.*
+| Tag | Frame | int → physical | Range | Notes |
+|---|---|---|---|---|
+| 0x00 (46 B, byte 2) | 46 B | `physical = 1 - int/200` | 0=open..1=closed | Awning |
+| 0x01 (46 B, byte 2) | 46 B | `physical = int/200` | 0=open..1=closed | Window — **no tilt** (linear actuator) |
+| 0x12, 0x14 (class 0xFD) | 22 B | `physical = 1 - int/200` | 0=open..1=closed | Blind 1/2 position |
+| 0x13, 0x15 (class 0xFD) | 22 B | `physical = 0.5 - int8(int)/160` | -80..80 | Blind 1/2 tilt |
 
 ### Timestamp (Tag 0x11, len 7, 46 B frame)
 
@@ -171,7 +192,7 @@ Notation: `int` = raw integer from device (0–255), `physical` = scaled enginee
 4. **58 B tags 0x06/0x07** — always zero; additional sensors?
 5. **58 B tags 0x0E/0x0F/0x10** — constant `07 00 80`; firmware/capability ID?
 6. **58 B tag 0x16** — constant `0x07`; protocol sub-version?
-7. **46 B tag 0x02** — blind block with different tilt scaling (100% vs 50%); **disabled** to prevent oscillation
+7. **46 B tag 0x02** — unknown block (6 bytes)
 
 ## Parser Implications
 
