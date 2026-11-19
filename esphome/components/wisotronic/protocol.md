@@ -41,47 +41,139 @@ Payload is a TLV chain: `[tag][length][value bytes...]`, with the tag/length/val
 consuming exactly `L` bytes. Validated over all 10,970 data frames: 0 parse failures, 0
 length mismatches.
 
-| Frame | Class | Tags | Notes |
+### Frame type overview
+
+| Frame | Class | Dataset | Size | Direction | Description |
+|---|---|---|---|---|---|
+| Poll | 0x00 | 1/2/3 | 11 B | 0x00/0xfd | Controller requests dataset |
+| Sensor/Temp | 0x00 | 1 | 22 B | 0xff | Indoor sensors |
+| Blind Status | 0xFD | 1 | 22 B | 0xff | Blind position/tilt |
+| Covers + Wind | 0xFD | 2 | 46 B | 0xff | Cover channels + wind |
+| Full Weather | 0xFD | 3 | 58 B | 0xff | All weather sensors |
+
+## TLV Tag Inventory by Frame Type
+
+### Poll Frame (11 B, Class 0x00, Dataset 1/2/3)
+
+No TLV payload. Byte 5 selects dataset to request.
+
+### Sensor/Temp Frame (22 B, Class 0x00, Dataset 1)
+
+| Tag | Len | Status | Meaning | Scaling / Formula |
+|---|---|---|---|---|
+| 0x00 | 1 | ✅ KNOWN | Control unit temperature raw | `°C = value/2 - 25` |
+| 0x01 | 1 | ❓ UNKNOWN | Always 0x00 | — |
+| 0x02 | 1 | ❓ UNKNOWN | Always 0x00 | — |
+| 0x03 | 1 | ❓ UNKNOWN | Always 0x00 | — |
+
+### Blind Status Frame (22 B, Class 0xFD, Dataset 1)
+
+| Tag | Len | Status | Meaning | Scaling / Formula |
+|---|---|---|---|---|
+| 0x12 | 1 | ✅ KNOWN | Blind 1 position | `pos = 1 - value/200` (0=open..1=closed) |
+| 0x13 | 1 | ✅ KNOWN | Blind 1 tilt | `tilt = 0.5 - int8(value)/160` (-80..80) |
+| 0x14 | 1 | ✅ KNOWN | Blind 2 position | `pos = 1 - value/200` |
+| 0x15 | 1 | ✅ KNOWN | Blind 2 tilt | `tilt = 0.5 - int8(value)/160` |
+
+### Covers + Wind Frame (46 B, Class 0xFD, Dataset 2)
+
+| Tag | Len | Status | Meaning | Scaling / Formula |
+|---|---|---|---|---|
+| 0x00 | 6 | ✅ KNOWN | Awning cover block | `28 08 <pos> <tilt> <pos2> <tilt2>` |
+| 0x01 | 6 | ✅ KNOWN | Window cover block | `0A 09 <pos> <tilt> <pos2> <tilt2>` |
+| 0x02 | 6 | ⚠️ VAGUE | Blind cover block | `28 08 <pos> <tilt> <pos2> <tilt2>` — differs from 0x12-0x15; **disabled** |
+| 0x03 | 1 | ✅ KNOWN | Wind speed | `m/s = value/5.0` |
+| 0x11 | 7 | ✅ KNOWN | **Full timestamp** | See below |
+
+**Tag 0x11 (Timestamp) — 7 bytes:**
+
+| Byte | Field | Encoding |
+|---|---|---|
+| 0 | Seconds | 0–59 (uint8) |
+| 1 | Minutes | 0–59 (uint8) |
+| 2 | Hour + flags | bits 5–0 = hour (0–63), bit 6 = version (1), bit 7 = DST (1 = summer) |
+| 3 | Weekday | 0 = Sun … 6 = Sat |
+| 4 | Day | 1–31 |
+| 5 | Month | 1–12 |
+| 6 | Year-2000 | 0–99 |
+
+*Validated against 2023-04-11 (DST active, 0xCF) and 2026-11-19 (standard time, 0x4B/4C/4F) captures.*
+
+### Full Weather Frame (58 B, Class 0xFD, Dataset 3)
+
+| Tag | Len | Status | Meaning | Scaling / Formula |
+|---|---|---|---|---|
+| 0x04 | 1 | ✅ KNOWN | Rain (bool) | 0 = none, 1 = rain |
+| 0x05 | 1 | ✅ KNOWN | Indoor temperature | `°C = value/2 - 25` |
+| 0x06 | 1 | ❓ UNKNOWN | Always 0x00 | — |
+| 0x07 | 1 | ❓ UNKNOWN | Always 0x00 | — |
+| 0x08 | 1 | ✅ KNOWN | Outdoor temperature | `°C = value/2 - 25` |
+| 0x09 | 1 | ✅ KNOWN | Humidity | `% = value/2` |
+| 0x0A | 1 | ✅ KNOWN | Photo 1 brightness | `lx = value/2 * 1000` |
+| 0x0B | 1 | ✅ KNOWN | Photo 2 brightness | `lx = value/2 * 1000` |
+| 0x0C | 1 | ✅ KNOWN | Photo 3 brightness | `lx = value/2 * 1000` |
+| 0x0D | 1 | ✅ KNOWN | Twilight brightness | `lx = value * 2` |
+| 0x0E | 3 | ❓ VAGUE | Constant `07 00 80` | Firmware/capability ID? |
+| 0x0F | 3 | ❓ VAGUE | Constant `07 00 80` | Same as 0x0E |
+| 0x10 | 3 | ❓ VAGUE | Constant `07 00 80` | Same as 0x0E/0x0F |
+| 0x16 | 1 | ❓ VAGUE | Constant `0x07` | Protocol sub-version? |
+
+## Field Mapping Summary (Decoded + Scaling)
+
+Notation: `int` = raw integer from device (0–255), `physical` = scaled engineering value.
+
+### Temperature / Humidity / Brightness (all single-byte tags)
+
+| Tag | Frame | int → physical | Unit |
 |---|---|---|---|
-| 11 B | 0x00 | - | poll / heartbeat (dataset select) |
-| 22 B | 0x00 | 0x00,0x01,0x02,0x03 (len 1 each) | sensor frame; tag 0x00 = control unit temp raw |
-| 22 B | 0xfd | 0x12,0x13,0x14,0x15 (len 1 each) | cover/status frame; blind channels |
-| 46 B | 0xfd | 0x00 (len 6), 0x01 (len 6), 0x02 (len 6), 0x03 (len 1), 0x11 (len 7) | covers + wind |
-| 58 B | 0xfd | 0x04..0x16 | full weather payload |
+| 0x00 (class 0x00) | 22 B | `physical = int/2 - 25` | °C |
+| 0x05 (class 0xFD) | 58 B | `physical = int/2 - 25` | °C |
+| 0x08 (class 0xFD) | 58 B | `physical = int/2 - 25` | °C |
+| 0x09 (class 0xFD) | 58 B | `physical = int/2` | % |
+| 0x0A, 0x0B, 0x0C (class 0xFD) | 58 B | `physical = int/2 * 1000` | lx |
+| 0x0D (class 0xFD) | 58 B | `physical = int * 2` | lx |
 
-## Field mapping (as decoded from tag values + scaling)
+### Wind / Rain
 
-- control unit / indoor temperature: raw = value*2 - 25 (°C)
-- outdoor temperature: raw = value*2 - 25 (°C)
-- humidity: raw = value*2 (percent)
-- photo brightness: raw = value*2*1000 (lx)
-- twilight: value = lx*2
-- wind speed: raw = value*5.0 (m/s)
-- cover channel blocks (46 B frame, tag 0x00/0x01/0x02, len 6): block `28 08 <p> <t> <p> <t>`;
-  e.g. tag 0x02 block was `28 08 00 b0 00 b0`.
-- **tag 0x11 (len 7) in 46 B frame: full timestamp**
-  - byte 0: seconds (0-59)
-  - byte 1: minutes (0-59)
-  - byte 2: hour (bit 7=DST flag, bit 6=version, bits 5-0=hour 0-63)
-  - byte 3: weekday (0=Sun..6=Sat)
-  - byte 4: day (1-31)
-  - byte 5: month (1-12)
-  - byte 6: year-2000
+| Tag | Frame | int → physical | Unit |
+|---|---|---|---|
+| 0x03 (class 0xFD) | 46 B | `physical = int/5.0` | m/s |
+| 0x04 (class 0xFD) | 58 B | `physical = int` (0/1) | bool |
 
-## Uncovered / missing data discovered in the dump
+### Cover Position / Tilt
 
-The pre-existing parser only handled:
+| Tag | Frame | int → physical | Range |
+|---|---|---|---|
+| 0x00 (46 B, byte 2) | 46 B | `physical = 1 - int/200` | 0=open..1=closed |
+| 0x01 (46 B, byte 2) | 46 B | `physical = int/200` | 0=open..1=closed |
+| 0x12, 0x14 (class 0xFD) | 22 B | `physical = 1 - int/200` | 0=open..1=closed |
+| 0x13, 0x15 (class 0xFD) | 22 B | `physical = 0.5 - int8(int)/160` | -80..80 |
 
-1. all 11 B frames -> not handled at all (poll frames)
-2. 22 B frames with class 0x00 -> only the sensor/temperature frame; 22 B frames with class
-   0xfd (blind status, tags 0x12-0x15) were silently ignored
-3. TLV fields inside handled frames that were never decoded:
-   - tags 0x0e / 0x0f / 0x10 (len 3 each, constant `07 00 80`) in the 58 B frame
-   - tag 0x16 (len 1, value 0x07) in the 58 B frame
-   - tags 0x01/0x02/0x03 in the 22 B sensor frame (currently zero)
-   - **tag 0x11 (len 7) in the 46 B frame is now decoded as full timestamp (see above)**
+*Cover block 0x02 (46 B) uses different tilt scaling (100% vs 50%); disabled in parser.*
 
-## Parser implications
+### Timestamp (Tag 0x11, len 7, 46 B frame)
+
+| Byte | Field | Encoding |
+|---|---|---|
+| 0 | Seconds | 0–59 (uint8) |
+| 1 | Minutes | 0–59 (uint8) |
+| 2 | Hour + flags | bits 5–0 = hour (0–63), bit 6 = version (1), bit 7 = DST (1 = summer) |
+| 3 | Weekday | 0 = Sun … 6 = Sat |
+| 4 | Day | 1–31 |
+| 5 | Month | 1–12 |
+| 6 | Year-2000 | 0–99 |
+
+## Uncovered / Missing Data
+
+1. **Poll frames (11 B)** — not handled (poll frames)
+2. **22 B Class 0x00 tags 0x01/0x02/0x03** — always zero; reserved?
+3. **22 B Class 0xFD tags 0x12–0x15** — blind status; were silently ignored in old parser
+4. **58 B tags 0x06/0x07** — always zero; additional sensors?
+5. **58 B tags 0x0E/0x0F/0x10** — constant `07 00 80`; firmware/capability ID?
+6. **58 B tag 0x16** — constant `0x07`; protocol sub-version?
+7. **46 B tag 0x02** — blind block with different tilt scaling (100% vs 50%); **disabled** to prevent oscillation
+
+## Parser Implications
 
 - Replace magic-byte resynchronization (`0x23` + last-two-byte check) with a length-field
   driven parser (use byte 8; total = byte8 + 10) + additive checksum validation.
@@ -89,7 +181,7 @@ The pre-existing parser only handled:
   TLV chain consumes exactly the declared payload length.
 - Route frames by (class, dataset) and map responses back to the requesting poll.
 
-## Cover control frames (TX)
+## Cover Control Frames (TX)
 
 Control frames are sent to command cover movement. The frame format follows the standard
 data frame layout with class `0xfd` (covers), direction `0xff` (data), dataset `0x02`:
