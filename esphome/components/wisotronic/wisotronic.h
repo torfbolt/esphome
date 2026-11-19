@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/cover/cover.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
@@ -15,6 +16,14 @@ namespace wisotronic {
 \
  public: \
   void set_##name(sensor::Sensor *name) { this->name##_ = name; }
+
+// Macro to define text sensors
+#define WISOTRONIC_TEXT_SENSOR(name) \
+ protected: \
+  text_sensor::TextSensor *name##_{nullptr}; \
+\
+ public: \
+  void set_##name(text_sensor::TextSensor *name) { this->name##_ = name; }
 
 // Macro to define covers
 #define WISOTRONIC_COVER(name) \
@@ -47,6 +56,11 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
   WISOTRONIC_SENSOR(photo2_brightness_sensor, float)
   WISOTRONIC_SENSOR(photo3_brightness_sensor, float)
   WISOTRONIC_SENSOR(twilight_brightness_sensor, float)
+
+  // --------------------------------------------------------------------------
+  // Text Sensors
+  // --------------------------------------------------------------------------
+  WISOTRONIC_TEXT_SENSOR(device_time)
 
   // --------------------------------------------------------------------------
   // Covers

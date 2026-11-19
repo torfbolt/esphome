@@ -2,7 +2,7 @@ import esphome.codegen as cg
 from esphome.components import sensor
 import esphome.config_validation as cv
 
-from .. import CONF_WISOTRONIC_ID, WISOTRONIC_COMPONENT_SCHEMA
+from . import CONF_WISOTRONIC_ID, WISOTRONIC_COMPONENT_SCHEMA
 
 DEPENDENCIES = ["uart"]
 

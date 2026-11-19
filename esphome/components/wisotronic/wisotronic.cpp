@@ -1,5 +1,6 @@
 #include "wisotronic.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
 #include <cstring>
 
 namespace esphome {
@@ -43,6 +44,7 @@ void WisotronicCustomComponent::dump_config() {
   LOG_SENSOR("", "Photo2 Brightness", this->photo2_brightness_sensor_);
   LOG_SENSOR("", "Photo3 Brightness", this->photo3_brightness_sensor_);
   LOG_SENSOR("", "Twilight Brightness", this->twilight_brightness_sensor_);
+  LOG_TEXT_SENSOR("", "Device Time", this->device_time_);
   if (awning_cover_ != nullptr) {
     ESP_LOGCONFIG(TAG, "Awning Cover: %p", awning_cover_);
   }
@@ -205,6 +207,14 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
       case 0x0d:  // twilight brightness
         if (vlen >= 1 && twilight_brightness_sensor_ != nullptr)
           twilight_brightness_sensor_->publish_state(val[0] * 2.0f);
+        break;
+      case 0x11:  // timestamp (len 7): sec, min, hour|dst|ver, wday, day, month, year-2000
+        if (vlen >= 7 && device_time_ != nullptr) {
+          char buf[25];
+          snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d", 2000 + val[6], val[5], val[4], val[2] & 0x3F,
+                   val[1], val[0]);
+          device_time_->publish_state(buf);
+        }
         break;
       case 0x12:  // blind 1 position (len 1)
         if (vlen >= 1 && blind1_cover_ != nullptr) {

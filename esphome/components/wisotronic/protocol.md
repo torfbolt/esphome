@@ -59,6 +59,14 @@ length mismatches.
 - wind speed: raw = value*5.0 (m/s)
 - cover channel blocks (46 B frame, tag 0x00/0x01/0x02, len 6): block `28 08 <p> <t> <p> <t>`;
   e.g. tag 0x02 block was `28 08 00 b0 00 b0`.
+- **tag 0x11 (len 7) in 46 B frame: full timestamp**
+  - byte 0: seconds (0-59)
+  - byte 1: minutes (0-59)
+  - byte 2: hour (bit 7=DST flag, bit 6=version, bits 5-0=hour 0-63)
+  - byte 3: weekday (0=Sun..6=Sat)
+  - byte 4: day (1-31)
+  - byte 5: month (1-12)
+  - byte 6: year-2000
 
 ## Uncovered / missing data discovered in the dump
 
@@ -68,10 +76,10 @@ The pre-existing parser only handled:
 2. 22 B frames with class 0x00 -> only the sensor/temperature frame; 22 B frames with class
    0xfd (blind status, tags 0x12-0x15) were silently ignored
 3. TLV fields inside handled frames that were never decoded:
-   - tag 0x11 (len 7) in the 46 B frame (sequence-like counter, bytes 2-6 constant)
    - tags 0x0e / 0x0f / 0x10 (len 3 each, constant `07 00 80`) in the 58 B frame
    - tag 0x16 (len 1, value 0x07) in the 58 B frame
    - tags 0x01/0x02/0x03 in the 22 B sensor frame (currently zero)
+   - **tag 0x11 (len 7) in the 46 B frame is now decoded as full timestamp (see above)**
 
 ## Parser implications
 
