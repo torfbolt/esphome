@@ -166,18 +166,9 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
         }
         break;
       case 0x02:  // blind block (len 6): pos1 tilt1 pos2 tilt2
-        if (vlen >= 5) {
-          if (blind1_cover_ != nullptr) {
-            blind1_cover_->position = 1.0f - val[2] / 200.0f;
-            blind1_cover_->tilt = 0.5f - static_cast<int8_t>(val[3]) / 160.0f;
-            blind1_cover_->publish_state();
-          }
-          if (blind2_cover_ != nullptr) {
-            blind2_cover_->position = 1.0f - val[4] / 200.0f;
-            blind2_cover_->tilt = 0.5f - static_cast<int8_t>(val[5]) / 160.0f;
-            blind2_cover_->publish_state();
-          }
-        }
+        // Disabled: 0x02 appears to be a status block, not a data block.
+        // Position/tilt data comes from individual tags (0x12, 0x13, 0x14, 0x15).
+        // Keeping this case commented out to prevent oscillation from dual sources.
         break;
       case 0x03:  // wind speed (len 1)
         if (vlen >= 1 && wind_speed_sensor_ != nullptr)
