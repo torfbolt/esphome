@@ -1,6 +1,6 @@
 import esphome.codegen as cg
-import esphome.config_validation as cv
 from esphome.components import sensor
+import esphome.config_validation as cv
 
 from .. import CONF_WISOTRONIC_ID, WISOTRONIC_COMPONENT_SCHEMA
 
@@ -79,6 +79,7 @@ SENSOR_SCHEMAS = {
 CONFIG_SCHEMA = WISOTRONIC_COMPONENT_SCHEMA.extend(
     {cv.Optional(type): SENSOR_SCHEMAS[type] for type in TYPES}
 )
+
 
 async def to_code(config):
     hub = await cg.get_variable(config[CONF_WISOTRONIC_ID])

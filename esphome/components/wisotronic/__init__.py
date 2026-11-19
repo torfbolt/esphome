@@ -3,6 +3,7 @@ from esphome.components import uart
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
+DOMAIN = "wisotronic"
 DEPENDENCIES = ["uart"]
 CODEOWNERS = ["@torfbolt"]
 AUTO_LOAD = ["sensor", "cover"]
@@ -25,9 +26,11 @@ WISOTRONIC_COMPONENT_SCHEMA = cv.Schema(
 
 # Complete YAML schema for the component
 CONFIG_SCHEMA = cv.All(
-    cv.Schema({cv.GenerateID(): cv.declare_id(WisotronicCustomComponent)})
-    .extend(uart.UART_DEVICE_SCHEMA)
+    cv.Schema({cv.GenerateID(): cv.declare_id(WisotronicCustomComponent)}).extend(
+        uart.UART_DEVICE_SCHEMA
+    )
 )
+
 
 async def to_code(config):
     # Create the component instance

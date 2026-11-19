@@ -56,13 +56,13 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
   WISOTRONIC_COVER(blind1_cover)
   WISOTRONIC_COVER(blind2_cover)
 
-protected:
-    void stream_to_packet(uint8_t byte);
-    void parse_wisotronic_packet(uint8_t len);
-    void process_tlv(uint8_t class_byte, uint8_t tag, uint8_t vlen, uint8_t *val);
+ protected:
+  void stream_to_packet(uint8_t byte);
+  void parse_wisotronic_packet(uint8_t len);
+  void process_tlv(uint8_t class_byte, uint8_t tag, uint8_t vlen, uint8_t *val);
 
-    uint8_t buffer_[128];
-    uint8_t p_buffer_ = 0;
+  uint8_t buffer_[128];
+  uint8_t p_buffer_ = 0;
 };
 
 class WisotronicCover : public cover::Cover, public Component {
