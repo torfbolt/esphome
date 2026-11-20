@@ -1,7 +1,6 @@
 # Wisotronic RS485 Protocol Notes
 
-Findings from reverse-engineering the Wisotronic bus (`warema_raw_data` UART dump,
-`esphome/warema.yaml`, ESPHome custom component `my_components/wisotronic`).
+Findings from reverse-engineering the Wisotronic bus.
 
 ## Status
 
@@ -22,14 +21,23 @@ List of tested hardware components this library supports (at least partially):
 * Messwertgeber Temperatur aussen (#628 145)
 * Messwertgeber Temperatur/Luftfeuchte (#628 147)
 
-The data was recorded using a standard USB-RS485 adapter. Currently the objective is to only
-monitor data, so a 100 kΩ resistor was added to each data line to rule out influencing the RS485
-bus.
+### Hardware Connection (X5 Terminal Block on Leistungsteil)
 
-## Physical layer (as configured in `warema.yaml`)
+The ESPHome device connects to the **X5 terminal block** on the Wisotronic Leistungsteil
+(power unit):
 
-- RS485 half-duplex, bus powered at 24 V, JY(St) 2x2x0.8 mm², 120 Ω termination.
-- Baud rate 19200, 8N1 (assumed).
+![Wisotronic X5 Terminal Block Wiring](x5_wiring.png)
+
+**ESPHome Device Connections:**
+- **Power**: 24V DC from X5 pin 2 (+) and pin 1 (GND) → 24V→5V DC/DC converter → ESP32/ESP8266
+- **RS485**: X5 pin 1 (GND), pin 3 (A), pin 4 (B) → RS485-to-TTL module (MAX485/SN65HVD75) → ESP UART
+- **⚠️ Do not add a 120 Ω termination resistor** — the Leistungsteil already contains the required bus termination internally.
+- **Cable**: Keep existing JY(St)Y 2×2×0.8 mm² between X5 pins 1–4 and Bedienteil (wall controller)
+
+## Physical layer (as configured in ESPHome `.yaml` file)
+
+- RS485 half-duplex.
+- Baud rate 19200, 8N1.
 - Protocol is bus-level broadcast/loopback: frames flow continuously, no request/response
   timing handshake.
 
