@@ -20,6 +20,19 @@ void WisotronicCustomComponent::loop() {
 }
 
 void WisotronicCustomComponent::write_frame(const uint8_t *frame, uint8_t len) {
+  // Wait for bus to be idle (no incoming data for at least 2ms)
+  // This prevents collisions on the half-duplex RS485 bus
+  uint32_t start_wait = millis();
+  while (available() > 0) {
+    if (millis() - start_wait > 50) {  // Max wait 50ms
+      break;
+    }
+    delay(1);
+  }
+
+  // Small additional gap to ensure bus is quiet
+  delayMicroseconds(500);
+
   for (uint8_t i = 0; i < len; i++) {
     write(frame[i]);
   }
