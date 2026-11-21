@@ -249,6 +249,7 @@ void WisotronicCover::control(const cover::CoverCall &call) {
   // TLV: [tag][len=6][block_type][sub_type][pos1][tilt1][pos2][tilt2]
   //   block_type: 0x28=stopped, 0x0a=moving
   //   sub_type: 0x08=stopped, 0x01=moving-down (close), 0x09=moving-up (open)
+  //             0x02/0x06=move to position (intermediate)
   //   pos: 0=open, 200=closed
   //   tilt: -80 to 80 (signed 8-bit)
 
@@ -260,6 +261,8 @@ void WisotronicCover::control(const cover::CoverCall &call) {
   // Check for position command first
   if (call.get_position().has_value()) {
     float target = call.get_position().value();
+    position = static_cast<uint8_t>(target * 200.0f);  // 0.0-1.0 -> 0-200
+
     if (target >= 1.0f) {
       // Open
       block_type = 0x0a;
@@ -270,6 +273,10 @@ void WisotronicCover::control(const cover::CoverCall &call) {
       block_type = 0x0a;
       sub_type = 0x01;
       position = 200;
+    } else {
+      // Intermediate position
+      block_type = 0x0a;
+      sub_type = 0x02;  // Move to intermediate position
     }
   }
 
@@ -277,7 +284,7 @@ void WisotronicCover::control(const cover::CoverCall &call) {
   if (call.get_stop()) {
     block_type = 0x28;
     sub_type = 0x08;
-    position = 0;
+    position = 0;  // Will be ignored when stopped
   }
 
   // Check for tilt command
