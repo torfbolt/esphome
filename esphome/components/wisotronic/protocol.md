@@ -101,10 +101,12 @@ No TLV payload. Byte 5 selects dataset to request.
 
 | Tag | Len | Status | Meaning | Scaling / Formula |
 |---|---|---|---|---|
-| 0x12 | 1 | ✅ KNOWN | Blind 1 position | `pos = 1 - value/200` (0=open..1=closed) |
-| 0x13 | 1 | ✅ KNOWN | Blind 1 tilt | `tilt = 0.5 - int8(value)/160` (-80..80) |
-| 0x14 | 1 | ✅ KNOWN | Blind 2 position | `pos = 1 - value/200` |
-| 0x15 | 1 | ✅ KNOWN | Blind 2 tilt | `tilt = 0.5 - int8(value)/160` |
+| 0x12 | 1 | ❌ UNUSED | Blind 1 position | Always 0x00 (not used) |
+| 0x13 | 1 | ❌ UNUSED | Blind 1 tilt | Always 0x00 (not used) |
+| 0x14 | 1 | ❌ UNUSED | Blind 2 position | Always 0x00 (not used) |
+| 0x15 | 1 | ❌ UNUSED | Blind 2 tilt | Always 0x00 (not used) |
+
+*Note: These tags were originally thought to carry blind status but are always 0x00 in all captured frames. Blind status is instead carried in the 46-byte frame tag 0x02.*
 
 ### Covers + Wind Frame (46 B, Class 0xFD, Dataset 2)
 
@@ -112,9 +114,20 @@ No TLV payload. Byte 5 selects dataset to request.
 |---|---|---|---|---|
 | 0x00 | 6 | ✅ KNOWN | Awning cover block | `28 08 <pos> <tilt> <pos2> <tilt2>` |
 | 0x01 | 6 | ✅ KNOWN | Window cover block | `0A 09 <pos> <tilt=0> <pos2> <tilt2=0>` — no tilt, linear actuator only |
-| 0x02 | 6 | ❓ UNKNOWN | Unknown block | `28 08 <val> <val> <val> <val>` |
+| 0x02 | 6 | ✅ KNOWN | **Blind 1+2 block** | `28 08 <pos1> <tilt1> <pos2> <tilt2>` — **both blinds in one block** |
 | 0x03 | 1 | ✅ KNOWN | Wind speed | `m/s = value/5.0` |
 | 0x11 | 7 | ✅ KNOWN | **Full timestamp** | See below |
+
+**Tag 0x02 (Blind 1+2 Block) — 6 bytes:**
+
+| Byte | Field | Encoding |
+|---|---|---|
+| 0 | Block type | 0x28=stopped, 0x32=moving |
+| 1 | Sub type | 0x08=stopped, 0x09=up, 0x10=down |
+| 2 | Blind 1 position | 0=open .. 200=closed |
+| 3 | Blind 1 tilt | -80..80 (signed 8-bit) |
+| 4 | Blind 2 position | 0=open .. 200=closed |
+| 5 | Blind 2 tilt | -80..80 (signed 8-bit) |
 
 **Tag 0x11 (Timestamp) — 7 bytes:**
 
@@ -177,8 +190,10 @@ Notation: `int` = raw integer from device (0–255), `physical` = scaled enginee
 |---|---|---|---|---|
 | 0x00 (46 B, byte 2) | 46 B | `physical = 1 - int/200` | 0=open..1=closed | Awning |
 | 0x01 (46 B, byte 2) | 46 B | `physical = int/200` | 0=open..1=closed | Window — **no tilt** (linear actuator) |
-| 0x12, 0x14 (class 0xFD) | 22 B | `physical = 1 - int/200` | 0=open..1=closed | Blind 1/2 position |
-| 0x13, 0x15 (class 0xFD) | 22 B | `physical = 0.5 - int8(int)/160` | -80..80 | Blind 1/2 tilt |
+| 0x02 (46 B, bytes 2,3) | 46 B | `physical = 1 - int/200` | 0=open..1=closed | **Blind 1 position** |
+| 0x02 (46 B, bytes 4,5) | 46 B | `physical = 0.5 - int8(int)/160` | -80..80 | **Blind 1 tilt** |
+| 0x02 (46 B, bytes 4,5) | 46 B | `physical = 1 - int/200` | 0=open..1=closed | **Blind 2 position** |
+| 0x02 (46 B, bytes 4,5) | 46 B | `physical = 0.5 - int8(int)/160` | -80..80 | **Blind 2 tilt** |
 
 ### Timestamp (Tag 0x11, len 7, 46 B frame)
 
@@ -196,11 +211,22 @@ Notation: `int` = raw integer from device (0–255), `physical` = scaled enginee
 
 1. **Poll frames (11 B)** — not handled (poll frames)
 2. **22 B Class 0x00 tags 0x01/0x02/0x03** — always zero; reserved?
-3. **22 B Class 0xFD tags 0x12–0x15** — blind status; were silently ignored in old parser
+3. **22 B Class 0xFD tags 0x12–0x15** — **always 0x00; unused** (blind status moved to 46-byte frame tag 0x02)
 4. **58 B tags 0x06/0x07** — always zero; additional sensors?
 5. **58 B tags 0x0E/0x0F/0x10** — constant `07 00 80`; firmware/capability ID?
 6. **58 B tag 0x16** — constant `0x07`; protocol sub-version?
-7. **46 B tag 0x02** — unknown block (6 bytes)
+7. **46 B tag 0x02** — **NOW DECODED**: blind 1+2 block with position/tilt for both blinds
+
+## Key Finding: Blind Position Broadcast Behavior
+
+**Blind position updates are ONLY broadcast for FB (remote) commands**, not for wall switch operations.
+
+| Operation Type | Blind Position Broadcast in 46-byte frames? |
+|---|---|
+| Wall switches (Taster) | ❌ **NO** — stays at pos=0, tilt=176 (idle) |
+| Remote control (FB) | ✅ **YES** — full position/tilt updates broadcast |
+| FB "All blinds DOWN" | ✅ pos 0→198, tilt updates |
+| FB "All blinds UP" | ✅ pos 198→0, tilt updates |
 
 ## Parser Implications
 

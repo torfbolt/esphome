@@ -167,7 +167,21 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
           window_cover_->publish_state();
         }
         break;
-      case 0x02:  // unknown block (len 6)
+      case 0x02:  // blind block (len 6): block_type, sub_type, pos1, tilt1, pos2, tilt2
+        if (vlen >= 6) {
+          // Position is in byte 2 (0=open, 200=closed)
+          // Tilt is in byte 3 (-80..80, signed 8-bit)
+          if (blind1_cover_ != nullptr) {
+            blind1_cover_->position = 1.0f - val[2] / 200.0f;
+            blind1_cover_->tilt = 0.5f - static_cast<int8_t>(val[3]) / 160.0f;
+            blind1_cover_->publish_state();
+          }
+          if (blind2_cover_ != nullptr) {
+            blind2_cover_->position = 1.0f - val[4] / 200.0f;
+            blind2_cover_->tilt = 0.5f - static_cast<int8_t>(val[5]) / 160.0f;
+            blind2_cover_->publish_state();
+          }
+        }
         break;
       case 0x03:  // wind speed (len 1)
         if (vlen >= 1 && wind_speed_sensor_ != nullptr)
@@ -211,30 +225,6 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
           snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d", 2000 + val[6], val[5], val[4], val[2] & 0x3F,
                    val[1], val[0]);
           device_time_->publish_state(buf);
-        }
-        break;
-      case 0x12:  // blind 1 position (len 1)
-        if (vlen >= 1 && blind1_cover_ != nullptr) {
-          blind1_cover_->position = 1.0f - val[0] / 200.0f;
-          blind1_cover_->publish_state();
-        }
-        break;
-      case 0x13:  // blind 1 tilt (len 1)
-        if (vlen >= 1 && blind1_cover_ != nullptr) {
-          blind1_cover_->tilt = 0.5f - static_cast<int8_t>(val[0]) / 160.0f;
-          blind1_cover_->publish_state();
-        }
-        break;
-      case 0x14:  // blind 2 position (len 1)
-        if (vlen >= 1 && blind2_cover_ != nullptr) {
-          blind2_cover_->position = 1.0f - val[0] / 200.0f;
-          blind2_cover_->publish_state();
-        }
-        break;
-      case 0x15:  // blind 2 tilt (len 1)
-        if (vlen >= 1 && blind2_cover_ != nullptr) {
-          blind2_cover_->tilt = 0.5f - static_cast<int8_t>(val[0]) / 160.0f;
-          blind2_cover_->publish_state();
         }
         break;
       default:
