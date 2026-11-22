@@ -22,27 +22,27 @@ void WisotronicCustomComponent::loop() {
 void WisotronicCustomComponent::write_frame(const uint8_t *frame, uint8_t len) {
   ESP_LOGI(TAG, "write_frame called, len=%d", len);
 
-  // Wait for bus to be idle (no incoming data for at least 1ms)
-  // The bus runs at ~46 frames/sec = ~22ms avg gap between frames
-  // We wait for a brief quiet period to avoid collisions
+  // Wait for bus to be idle (no incoming data for at least 5ms)
+  // At 19200 baud, a full frame (46 bytes) takes ~24ms to transmit.
+  // The inter-frame gap is ~30ms. 5ms silence = frame boundary detected.
   uint32_t start_wait = millis();
   uint32_t last_data = millis();
   while (true) {
     if (available() > 0) {
       last_data = millis();  // Data received, reset quiet timer
     }
-    if (millis() - last_data >= 1) {  // 1ms of silence = likely inter-frame gap
+    if (millis() - last_data >= 5) {  // 5ms of silence = frame boundary
       break;
     }
-    if (millis() - start_wait > 50) {  // Max wait 50ms (safety timeout)
-      ESP_LOGW(TAG, "TX timeout, sending anyway");
+    if (millis() - start_wait > 100) {  // Max wait 100ms (safety)
+      ESP_LOGW(TAG, "TX timeout after 100ms, sending anyway");
       break;
     }
     delay(1);
   }
 
   // Small additional gap to ensure bus is quiet
-  delayMicroseconds(1000);
+  delayMicroseconds(2000);
 
   for (uint8_t i = 0; i < len; i++) {
     write(frame[i]);
