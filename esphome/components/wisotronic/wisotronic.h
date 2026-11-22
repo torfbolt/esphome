@@ -75,6 +75,16 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
 
   // TX: send a raw frame over UART
   void write_frame(const uint8_t *frame, uint8_t len);
+  void send_batch_frame();
+
+  // Cover state tracking
+  struct CoverState {
+    uint8_t sub_type = 0x08;  // stopped
+    uint8_t position = 0;     // 0=open, 200=closed
+    int8_t tilt = 0;
+  };
+  CoverState setpoints_[4] = {};  // awning=0, window=1, blind1=2, blind2=3
+  CoverState actual_[4] = {};
 
  protected:
   void stream_to_packet(uint8_t byte);
@@ -84,6 +94,7 @@ class WisotronicCustomComponent : public uart::UARTDevice, public Component {
   uint8_t buffer_[128];
   uint8_t p_buffer_ = 0;
   bool debug_enabled_{false};
+  uint8_t sequence_{0};
 };
 
 class WisotronicCover : public cover::Cover, public Component {

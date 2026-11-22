@@ -6,11 +6,22 @@
 namespace esphome {
 namespace wisotronic {
 
-ESPHOME_LOG_TAG(TAG, "wisotronic");
+static const char TAG[] PROGMEM = "wisotronic";
 
 WisotronicCustomComponent::WisotronicCustomComponent(uart::UARTComponent *parent) : UARTDevice(parent) {}
 
-void WisotronicCustomComponent::setup() {}
+void WisotronicCustomComponent::setup() {
+  // Initialize cover state tracking
+  for (int i = 0; i < 4; i++) {
+    setpoints_[i].sub_type = 0x08;  // stopped
+    setpoints_[i].position = 0;
+    setpoints_[i].tilt = 0;
+    actual_[i].sub_type = 0x08;
+    actual_[i].position = 0;
+    actual_[i].tilt = 0;
+  }
+  sequence_ = 0;
+}
 
 void WisotronicCustomComponent::loop() {
   while (available()) {
@@ -181,21 +192,38 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
   } else if (class_byte == 0xfd) {
     switch (tag) {
       case 0x00:  // awning block (len 6)
-        if (vlen >= 3 && awning_cover_ != nullptr) {
-          awning_cover_->position = 1.0f - val[2] / 200.0f;
-          awning_cover_->publish_state();
+        if (vlen >= 6) {
+          // Update actual state
+          actual_[0].sub_type = val[0];
+          actual_[0].position = val[2];
+          actual_[0].tilt = static_cast<int8_t>(val[3]);
+          if (awning_cover_ != nullptr) {
+            awning_cover_->position = 1.0f - val[2] / 200.0f;
+            awning_cover_->publish_state();
+          }
         }
         break;
       case 0x01:  // window block (len 6)
-        if (vlen >= 3 && window_cover_ != nullptr) {
-          window_cover_->position = val[2] / 200.0f;
-          window_cover_->publish_state();
+        if (vlen >= 6) {
+          // Update actual state
+          actual_[1].sub_type = val[0];
+          actual_[1].position = val[2];
+          actual_[1].tilt = static_cast<int8_t>(val[3]);
+          if (window_cover_ != nullptr) {
+            window_cover_->position = val[2] / 200.0f;
+            window_cover_->publish_state();
+          }
         }
         break;
       case 0x02:  // blind block (len 6): block_type, sub_type, pos1, tilt1, pos2, tilt2
         if (vlen >= 6) {
-          // Position is in byte 2 (0=open, 200=closed)
-          // Tilt is in byte 3 (-80..80, signed 8-bit)
+          // Update actual state for both blinds
+          actual_[2].sub_type = val[0];
+          actual_[2].position = val[2];
+          actual_[2].tilt = static_cast<int8_t>(val[3]);
+          actual_[3].sub_type = val[0];
+          actual_[3].position = val[4];
+          actual_[3].tilt = static_cast<int8_t>(val[5]);
           if (blind1_cover_ != nullptr) {
             blind1_cover_->position = 1.0f - val[2] / 200.0f;
             blind1_cover_->tilt = 0.5f - static_cast<int8_t>(val[3]) / 160.0f;
@@ -258,6 +286,79 @@ void WisotronicCustomComponent::process_tlv(uint8_t class_byte, uint8_t tag, uin
   }
 }
 
+void WisotronicCustomComponent::send_batch_frame() {
+  // Build 46-byte batch frame (class 0xfd, dataset 2, L=36)
+  // Header: 23 fd ff 1c 10 01 00 02 24
+  // TLV: tag 0x00 (awning, 6), 0x01 (window, 6), 0x02 (blind1+2, 6), 0x03 (seq, 1), 0x11 (timestamp, 7)
+
+  uint8_t frame[46];
+  frame[0] = 0x23;  // magic
+  frame[1] = 0xfd;  // class (covers)
+  frame[2] = 0xff;  // direction (data)
+  frame[3] = 0x1c;  // frame type (data)
+  frame[4] = 0x10;  // data flag
+  frame[5] = 0x01;  // dataset
+  frame[6] = 0x00;  // dataset selector
+  frame[7] = 0x02;  // dataset id (covers)
+  frame[8] = 36;    // L = 36 bytes TLV payload
+
+  uint8_t *payload = frame + 9;
+  uint8_t offset = 0;
+
+  // Tag 0x00: Awning (6 bytes)
+  payload[offset++] = 0x00;  // tag
+  payload[offset++] = 0x06;  // len
+  payload[offset++] = 0x0a;  // block_type (moving)
+  payload[offset++] = setpoints_[0].sub_type;
+  payload[offset++] = setpoints_[0].position;
+  payload[offset++] = static_cast<uint8_t>(setpoints_[0].tilt);
+
+  // Tag 0x01: Window (6 bytes)
+  payload[offset++] = 0x01;
+  payload[offset++] = 0x06;
+  payload[offset++] = 0x0a;
+  payload[offset++] = setpoints_[1].sub_type;
+  payload[offset++] = setpoints_[1].position;
+  payload[offset++] = static_cast<uint8_t>(setpoints_[1].tilt);
+
+  // Tag 0x02: Blind 1+2 (6 bytes) - pos1/tilt1 = blind1, pos2/tilt2 = blind2
+  payload[offset++] = 0x02;
+  payload[offset++] = 0x06;
+  payload[offset++] = 0x0a;
+  payload[offset++] = setpoints_[2].sub_type;
+  payload[offset++] = setpoints_[2].position;
+  payload[offset++] = static_cast<uint8_t>(setpoints_[2].tilt);
+  payload[offset++] = setpoints_[3].position;
+  payload[offset++] = static_cast<uint8_t>(setpoints_[3].tilt);
+
+  // Tag 0x03: Sequence (1 byte)
+  payload[offset++] = 0x03;
+  payload[offset++] = 0x01;
+  payload[offset++] = sequence_++;
+
+  // Tag 0x11: Timestamp (7 bytes) - sec, min, hour|dst|ver, wday, day, month, year-2000
+  // For now, use zeros (device fills in actual time)
+  payload[offset++] = 0x11;
+  payload[offset++] = 0x07;
+  payload[offset++] = 0x00;  // sec
+  payload[offset++] = 0x00;  // min
+  payload[offset++] = 0x00;  // hour (with flags)
+  payload[offset++] = 0x00;  // wday
+  payload[offset++] = 0x00;  // day
+  payload[offset++] = 0x00;  // month
+  payload[offset++] = 0x00;  // year-2000
+
+  // Calculate checksum
+  uint8_t checksum = 0;
+  for (int i = 0; i < 45; i++) {
+    checksum += frame[i];
+  }
+  frame[45] = checksum;
+
+  write_frame(frame, 46);
+  ESP_LOGI(TAG, "Sent batch control frame (seq=%d)", sequence_ - 1);
+}
+
 cover::CoverTraits WisotronicCover::get_traits() {
   auto traits = cover::CoverTraits();
   traits.set_is_assumed_state(false);
@@ -273,91 +374,28 @@ void WisotronicCover::control(const cover::CoverCall &call) {
   if (parent_ == nullptr)
     return;
 
-  // Build a control frame: 23 fd ff 1c 10 01 00 02 <L> <TLV> <checksum>
-  // TLV: [tag][len=6][block_type][sub_type][pos1][tilt1][pos2][tilt2]
-  //   block_type: 0x28=stopped, 0x0a=moving
-  //   sub_type: 0x08=stopped, 0x01=moving-down (close), 0x09=moving-up (open)
-  //             0x02/0x06=move to position (intermediate)
-  //   pos: 0=open, 200=closed
-  //   tilt: -80 to 80 (signed 8-bit)
-
-  uint8_t block_type = 0x28;  // stopped by default
-  uint8_t sub_type = 0x08;
-  uint8_t position = 0;  // 0=open, 200=closed
-  int8_t tilt = 0;       // -80 to 80
-
-  // Check for position command first
+  // Update this cover's setpoint
   if (call.get_position().has_value()) {
     float target = call.get_position().value();
-    position = static_cast<uint8_t>(target * 200.0f);  // 0.0-1.0 -> 0-200
-
+    parent_->setpoints_[this->tag_].position = static_cast<uint8_t>(target * 200.0f);
     if (target >= 1.0f) {
-      // Open
-      block_type = 0x0a;
-      sub_type = 0x09;
-      position = 0;
+      parent_->setpoints_[this->tag_].sub_type = 0x09;  // open
     } else if (target <= 0.0f) {
-      // Close
-      block_type = 0x0a;
-      sub_type = 0x01;
-      position = 200;
+      parent_->setpoints_[this->tag_].sub_type = 0x01;  // close
     } else {
-      // Intermediate position
-      block_type = 0x0a;
-      sub_type = 0x02;  // Move to intermediate position
+      parent_->setpoints_[this->tag_].sub_type = 0x02;  // intermediate
     }
   }
-
-  // Check for stop command (overrides position)
   if (call.get_stop()) {
-    block_type = 0x28;
-    sub_type = 0x08;
-    position = 0;  // Will be ignored when stopped
+    parent_->setpoints_[this->tag_].sub_type = 0x08;  // stop
+    parent_->setpoints_[this->tag_].position = parent_->actual_[this->tag_].position;
   }
-
-  // Check for tilt command
   if (call.get_tilt().has_value()) {
-    block_type = 0x28;
-    sub_type = 0x08;
-    float target_tilt = call.get_tilt().value();
-    tilt = static_cast<int8_t>(target_tilt * 160.0f - 80.0f);  // 0-100% -> -80 to 80
+    parent_->setpoints_[this->tag_].tilt = static_cast<int8_t>(call.get_tilt().value() * 160.0f - 80.0f);
   }
 
-  uint8_t tag = this->tag_;
-  uint8_t block_len = 6;
-
-  uint8_t payload[8];
-  payload[0] = tag;
-  payload[1] = block_len;
-  payload[2] = block_type;
-  payload[3] = sub_type;
-  payload[4] = position;
-  payload[5] = static_cast<uint8_t>(tilt);
-  payload[6] = 0;  // pos2
-  payload[7] = 0;  // tilt2
-
-  uint8_t frame[18];
-  frame[0] = 0x23;  // magic
-  frame[1] = 0xfd;  // class (covers)
-  frame[2] = 0xff;  // direction (data)
-  frame[3] = 0x1c;  // frame type (data)
-  frame[4] = 0x10;  // data flag
-  frame[5] = 0x01;  // dataset
-  frame[6] = 0x00;  // dataset selector
-  frame[7] = 0x02;  // dataset id for covers
-  frame[8] = 8;     // L = payload length (8 bytes TLV)
-  for (int i = 0; i < 8; i++) {
-    frame[9 + i] = payload[i];
-  }
-  uint8_t checksum = 0;
-  for (int i = 0; i < 17; i++) {
-    checksum += frame[i];
-  }
-  frame[17] = checksum;
-
-  parent_->write_frame(frame, 18);
-  ESP_LOGD(TAG, "Sent cover control (tag=0x%02x): block_type=0x%02x sub_type=0x%02x pos=%d tilt=%d", tag, block_type,
-           sub_type, position, tilt);
+  // Build batch frame with all covers' setpoints
+  parent_->send_batch_frame();
 }
 
 }  // namespace wisotronic
