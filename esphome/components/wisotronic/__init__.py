@@ -137,18 +137,22 @@ async def to_code(config):
     if "awning" in config:
         awning = await cover.new_cover(config["awning"])
         cg.add(var.set_awning_cover(awning))
+        cg.add(awning.set_parent(var))
 
     if "window" in config:
         window = await cover.new_cover(config["window"])
         cg.add(var.set_window_cover(window))
+        cg.add(window.set_parent(var))
 
     if "blind1" in config:
         blind1 = await cover.new_cover(config["blind1"])
         cg.add(var.set_blind1_cover(blind1))
+        cg.add(blind1.set_parent(var))
 
     if "blind2" in config:
         blind2 = await cover.new_cover(config["blind2"])
         cg.add(var.set_blind2_cover(blind2))
+        cg.add(blind2.set_parent(var))
 
     # Wire up sub-sensors
     sensors = sensor.sub_sensors(config)
