@@ -20,6 +20,8 @@ void WisotronicCustomComponent::loop() {
 }
 
 void WisotronicCustomComponent::write_frame(const uint8_t *frame, uint8_t len) {
+  ESP_LOGI(TAG, "write_frame called, len=%d", len);
+
   // Wait for bus to be idle (no incoming data for at least 3ms)
   // The bus runs at ~46 frames/sec = ~22ms avg gap between frames
   // We wait for a quiet period (3ms of no data) to avoid collisions
@@ -44,6 +46,7 @@ void WisotronicCustomComponent::write_frame(const uint8_t *frame, uint8_t len) {
   for (uint8_t i = 0; i < len; i++) {
     write(frame[i]);
   }
+  ESP_LOGI(TAG, "write_frame completed, sent %d bytes", len);
   if (this->debug_enabled_) {
     char hex[3 * 128 + 1];
     size_t pos = 0;
