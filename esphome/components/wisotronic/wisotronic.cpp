@@ -263,6 +263,9 @@ cover::CoverTraits WisotronicCover::get_traits() {
 }
 
 void WisotronicCover::control(const cover::CoverCall &call) {
+  ESP_LOGI(TAG, "control() called for tag=0x%02x, position=%.2f, tilt=%.2f, stop=%d", this->tag_,
+           call.get_position().value_or(-1.0f), call.get_tilt().value_or(-1.0f), call.get_stop());
+
   if (parent_ == nullptr)
     return;
 
